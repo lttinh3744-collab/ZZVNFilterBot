@@ -2,19 +2,22 @@ import os
 import time
 import telebot
 import pandas as pd
-import cloudscraper
 from io import BytesIO
+import undetected_chromedriver as uc
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'desktop': True
-    }
-)
+# Khởi tạo undetected Chrome (bypass tốt hơn)
+options = uc.ChromeOptions()
+options.add_argument("--headless=new")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-blink-features=AutomationControlled")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--disable-gpu")
+
+driver = uc.Chrome(options=options, use_subprocess=True)
 
 def check_number(phone):
     if not phone or str(phone).strip() == "":
@@ -29,14 +32,16 @@ def check_number(phone):
     url = f"https://zalo.me/{phone_str}"
     
     try:
-        r = scraper.get(url, timeout=12)
-        text = r.text.lower()
-        current_url = r.url.lower()
+        driver.get(url)
+        time.sleep(5)  # chờ load trang
         
-        if "đăng nhập" in text or "login" in text or "id.zalo.me/account/login" in current_url:
+        page_text = driver.page_source.lower()
+        current_url = driver.current_url.lower()
+        
+        if "đăng nhập" in page_text or "login" in page_text or "id.zalo.me/account/login" in current_url:
             return "cannot_check"
         
-        if "tài khoản này không tồn tại hoặc không cho phép tìm kiếm" in text:
+        if "tài khoản này không tồn tại hoặc không cho phép tìm kiếm" in page_text:
             return False
         
         return True
@@ -63,15 +68,15 @@ def handle_document(message):
             bot.reply_to(message, "❌ File phải có ít nhất cột C chứa số điện thoại")
             return
         
-        keep_indices = [0]  # giữ header
+        keep_indices = [0]
         cannot_check = False
         total = len(df) - 1
         
         for i in range(1, len(df)):
-            if (i % 50 == 0):
+            if (i % 30 == 0):
                 bot.send_message(message.chat.id, f"⏳ Đã kiểm tra {i}/{total} dòng...")
             
-            phone = df.iloc[i, 2]  # cột C
+            phone = df.iloc[i, 2]
             result = check_number(phone)
             
             if result == "cannot_check":
@@ -95,7 +100,7 @@ def handle_document(message):
             message.chat.id,
             document=output,
             filename=new_name,
-            caption=f"✅ Hoàn tất!\nTổng số đã kiểm tra: {total}\nSố giữ lại: {len(keep_indices)-1}\nFile mới: {new_name}"
+            caption=f"✅ Hoàn tất!\nTổng số đã kiểm tra: {total}\nSố giữ lại: {len(keep_indices)-1}"
         )
         
     except Exception as e:
