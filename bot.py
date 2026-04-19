@@ -8,7 +8,6 @@ from io import BytesIO
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-# Tạo scraper (giúp bypass Cloudflare/Zalo tốt hơn)
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -17,11 +16,10 @@ scraper = cloudscraper.create_scraper(
     }
 )
 
-def check_has_zalo(phone):
+def check_number(phone):
     if not phone or str(phone).strip() == "":
         return False
     
-    # Làm sạch số điện thoại
     phone_str = str(phone).strip().replace("+84", "0").replace(" ", "").replace("-", "").replace(".", "")
     if phone_str.startswith("84"):
         phone_str = "0" + phone_str[2:]
@@ -32,19 +30,15 @@ def check_has_zalo(phone):
     
     try:
         r = scraper.get(url, timeout=12)
-        
         text = r.text.lower()
         current_url = r.url.lower()
         
-        # Không thể check (yêu cầu đăng nhập)
         if "đăng nhập" in text or "login" in text or "id.zalo.me/account/login" in current_url:
             return "cannot_check"
         
-        # Không có Zalo
         if "tài khoản này không tồn tại hoặc không cho phép tìm kiếm" in text:
             return False
         
-        # Có Zalo
         return True
     except:
         return False
@@ -75,22 +69,21 @@ def handle_document(message):
         
         for i in range(1, len(df)):
             if (i % 50 == 0):
-                bot.send_message(message.chat.id, f"⏳ Đã check {i}/{total} số...")
+                bot.send_message(message.chat.id, f"⏳ Đã kiểm tra {i}/{total} dòng...")
             
             phone = df.iloc[i, 2]  # cột C
-            result = check_has_zalo(phone)
+            result = check_number(phone)
             
             if result == "cannot_check":
                 cannot_check = True
                 break
-            if result:  # có Zalo
+            if result:
                 keep_indices.append(i)
         
         if cannot_check:
-            bot.reply_to(message, "không thể check file")
+            bot.reply_to(message, "không thể kiểm tra file")
             return
         
-        # Tạo file kết quả
         filtered_df = df.iloc[keep_indices]
         output = BytesIO()
         filtered_df.to_excel(output, index=False, engine='openpyxl')
@@ -102,7 +95,7 @@ def handle_document(message):
             message.chat.id,
             document=output,
             filename=new_name,
-            caption=f"✅ Đã lọc xong!\nTổng số đã check: {total}\nSố có Zalo: {len(keep_indices)-1}\nFile mới: {new_name}"
+            caption=f"✅ Hoàn tất!\nTổng số đã kiểm tra: {total}\nSố giữ lại: {len(keep_indices)-1}\nFile mới: {new_name}"
         )
         
     except Exception as e:
@@ -110,7 +103,7 @@ def handle_document(message):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Bot lọc Zalo (không Selenium) sẵn sàng!\nGửi file Excel cho mình nhé.\n- Hàng đầu tiên là header (bỏ qua)\n- Số điện thoại phải ở **cột C**")
+    bot.reply_to(message, "👋 Bot sẵn sàng!\nGửi file Excel cho mình.\n- Hàng đầu tiên là header (bỏ qua)\n- Số điện thoại phải nằm ở **cột C**")
 
-print("🚀 Bot lọc Zalo (requests + cloudscraper) đang chạy...")
+print("Bot đang chạy...")
 bot.infinity_polling()
