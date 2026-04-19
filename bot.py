@@ -1,23 +1,23 @@
 import os
 import time
+import random
 import telebot
 import pandas as pd
+import cloudscraper
 from io import BytesIO
-import undetected_chromedriver as uc
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-# Khởi tạo undetected Chrome (bypass tốt hơn)
-options = uc.ChromeOptions()
-options.add_argument("--headless=new")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-blink-features=AutomationControlled")
-options.add_argument("--window-size=1920,1080")
-options.add_argument("--disable-gpu")
-
-driver = uc.Chrome(options=options, use_subprocess=True)
+# Tạo scraper với nhiều tùy chọn ngụy trang
+scraper = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    },
+    delay=2
+)
 
 def check_number(phone):
     if not phone or str(phone).strip() == "":
@@ -32,20 +32,28 @@ def check_number(phone):
     url = f"https://zalo.me/{phone_str}"
     
     try:
-        driver.get(url)
-        time.sleep(5)  # chờ load trang
+        # Thêm random delay để giống người thật
+        time.sleep(random.uniform(2.5, 5.5))
         
-        page_text = driver.page_source.lower()
-        current_url = driver.current_url.lower()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+        }
         
-        if "đăng nhập" in page_text or "login" in page_text or "id.zalo.me/account/login" in current_url:
+        r = scraper.get(url, headers=headers, timeout=15)
+        
+        text = r.text.lower()
+        current_url = r.url.lower()
+        
+        if "đăng nhập" in text or "login" in text or "id.zalo.me/account/login" in current_url:
             return "cannot_check"
         
-        if "tài khoản này không tồn tại hoặc không cho phép tìm kiếm" in page_text:
+        if "tài khoản này không tồn tại hoặc không cho phép tìm kiếm" in text:
             return False
         
         return True
     except:
+        time.sleep(3)
         return False
 
 @bot.message_handler(content_types=['document'])
@@ -55,7 +63,7 @@ def handle_document(message):
         bot.reply_to(message, "❌ Chỉ hỗ trợ file Excel (.xlsx, .xls, .xlsm)")
         return
     
-    bot.reply_to(message, f"🔄 Đang xử lý file `{doc.file_name}`...\nFile lớn có thể mất vài phút.")
+    bot.reply_to(message, f"🔄 Đang xử lý file `{doc.file_name}`...\nFile lớn sẽ mất nhiều thời gian hơn.")
     
     try:
         file_info = bot.get_file(doc.file_id)
@@ -73,7 +81,7 @@ def handle_document(message):
         total = len(df) - 1
         
         for i in range(1, len(df)):
-            if (i % 30 == 0):
+            if (i % 40 == 0):
                 bot.send_message(message.chat.id, f"⏳ Đã kiểm tra {i}/{total} dòng...")
             
             phone = df.iloc[i, 2]
